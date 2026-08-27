@@ -8,6 +8,7 @@ import { CONTACTS } from "../mocks/handlers";
 
 jest.mock("@/app/contacts/actions", () => ({
   deleteContactAction: jest.fn(async () => ({})),
+  toggleFavoriteAction: jest.fn(async () => ({})),
 }));
 
 describe("ContactsTable", () => {
@@ -29,6 +30,22 @@ describe("ContactsTable", () => {
     expect(
       screen.getByRole("button", { name: /delete ada lovelace/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /favorite ada lovelace/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a favorited contact's row as favorited", () => {
+    render(
+      <ContactsTable
+        contacts={[{ ...CONTACTS[0], is_favorite: true }]}
+        query={DEFAULT_LIST_QUERY}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /unfavorite ada lovelace/i }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("marks the sorted column and links to the opposite direction", () => {

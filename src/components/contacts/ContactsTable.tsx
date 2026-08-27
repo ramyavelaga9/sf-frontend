@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Pencil } from "lucide-react";
 import ContactAvatar from "./ContactAvatar";
 import DeleteContactButton from "./DeleteContactButton";
+import FavoriteButton from "./FavoriteButton";
 import SortHeader from "./SortHeader";
 import { buttonClasses } from "@/components/ui/Button";
 import { jobLine } from "@/lib/contacts/format";
@@ -98,6 +99,11 @@ export default function ContactsTable({
 
                 <td className="px-4 py-2.5">
                   <div className="flex items-center justify-end gap-1">
+                    <FavoriteButton
+                      contactId={contact.id}
+                      contactName={contact.full_name}
+                      isFavorite={contact.is_favorite}
+                    />
                     <Link
                       href={`/contacts/${contact.id}/edit`}
                       aria-label={`Edit ${contact.full_name}`}

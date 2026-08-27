@@ -33,6 +33,12 @@ export interface Contact {
   job_title: string | null;
   addresses: Address[];
   notes: string | null;
+  /**
+   * Not part of `ContactInput` — POST/PUT don't accept it, so a full replace
+   * of a contact's other fields can never silently clear it. The only way to
+   * change it is `PATCH { is_favorite }`, via `toggleFavorite` in `./api.ts`.
+   */
+  is_favorite: boolean;
   created_at: string;
   updated_at: string;
   full_name: string;
@@ -41,7 +47,7 @@ export interface Contact {
 /** Every editable field, i.e. `ContactCreate` / `ContactReplace`. */
 export type ContactInput = Omit<
   Contact,
-  "id" | "created_at" | "updated_at" | "full_name" | "addresses"
+  "id" | "created_at" | "updated_at" | "full_name" | "addresses" | "is_favorite"
 > & {
   addresses: AddressInput[];
 };

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ChevronLeft, Pencil } from "lucide-react";
 import ContactAvatar from "@/components/contacts/ContactAvatar";
 import DeleteContactButton from "@/components/contacts/DeleteContactButton";
+import FavoriteButton from "@/components/contacts/FavoriteButton";
 import { buttonClasses } from "@/components/ui/Button";
 import { getContact } from "@/lib/contacts/api";
 import { addressLine, formatTimestamp, jobLine } from "@/lib/contacts/format";
@@ -68,6 +69,14 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          <FavoriteButton
+            contactId={contact.id}
+            contactName={contact.full_name}
+            isFavorite={contact.is_favorite}
+            variant="secondary"
+            size="md"
+            withLabel
+          />
           <Link
             href={`/contacts/${contact.id}/edit`}
             className={buttonClasses("secondary")}

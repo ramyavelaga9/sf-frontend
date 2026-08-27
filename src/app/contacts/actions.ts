@@ -9,6 +9,7 @@ import {
   deleteContact,
   replaceContact,
   toFieldErrors,
+  toggleFavorite,
 } from "@/lib/contacts/api";
 import {
   contactInputSchema,
@@ -91,6 +92,31 @@ export async function saveContactAction(
   invalidate(saved.id);
   // Outside the try/catch: redirect() signals by throwing.
   redirect(`/contacts/${saved.id}`);
+}
+
+export interface ToggleFavoriteResult {
+  error?: string;
+  isFavorite?: boolean;
+}
+
+/** Favorite or unfavorite a contact. Favorited contacts sort to the top of the list. */
+export async function toggleFavoriteAction(
+  contactId: number,
+  isFavorite: boolean,
+): Promise<ToggleFavoriteResult> {
+  let saved: Contact;
+  try {
+    saved = await toggleFavorite(contactId, isFavorite);
+  } catch (error) {
+    if (error instanceof ApiUnreachableError) return { error: UNREACHABLE };
+    if (error instanceof ApiError) {
+      return { error: apiErrorMessage(error, "Could not update favorite status.") };
+    }
+    throw error;
+  }
+
+  invalidate(saved.id);
+  return { isFavorite: saved.is_favorite };
 }
 
 export interface DeleteResult {
