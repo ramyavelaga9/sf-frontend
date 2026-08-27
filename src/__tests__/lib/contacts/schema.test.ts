@@ -14,11 +14,7 @@ function values(overrides: Record<string, string> = {}) {
     photo_url: "",
     company: "",
     job_title: "",
-    address: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "",
+    addresses: "[]",
     notes: "",
     ...overrides,
   };
@@ -85,13 +81,65 @@ describe("contactInputSchema", () => {
 
   it("enforces the API's length limits", () => {
     const result = contactInputSchema.safeParse(
-      values({ first_name: "a".repeat(101), postal_code: "9".repeat(21) }),
+      values({ first_name: "a".repeat(101) }),
     );
 
     expect(zodFieldErrors(result.error!)).toEqual({
       first_name: "First name must be 100 characters or fewer",
-      postal_code: "Postal code must be 20 characters or fewer",
     });
+  });
+
+  it("parses a JSON addresses list into structured objects", () => {
+    const addresses = JSON.stringify([
+      { type: "Home", city: "San Francisco", state: "CA" },
+      { type: "Work", city: "New York" },
+    ]);
+
+    const parsed = contactInputSchema.parse(values({ addresses })).addresses;
+
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({ type: "Home", city: "San Francisco" });
+    expect(parsed[1]).toMatchObject({ type: "Work", city: "New York" });
+  });
+
+  it("rejects addresses that aren't valid JSON", () => {
+    const result = contactInputSchema.safeParse(values({ addresses: "{not json" }));
+    expect(zodFieldErrors(result.error!).addresses).toBe(
+      "Addresses could not be read.",
+    );
+  });
+
+  it("rejects an address with an unknown type, keyed to that address's own field", () => {
+    const addresses = JSON.stringify([{ type: "Vacation", city: "Reno" }]);
+    const result = contactInputSchema.safeParse(values({ addresses }));
+
+    expect(result.success).toBe(false);
+    expect(Object.keys(zodFieldErrors(result.error!))).toContain("addresses.0.type");
+  });
+
+  it("enforces length limits within each address, keyed by index and field", () => {
+    const addresses = JSON.stringify([
+      { type: "Home", city: "SF" },
+      { type: "Work", postal_code: "9".repeat(21) },
+    ]);
+    const result = contactInputSchema.safeParse(values({ addresses }));
+
+    expect(result.success).toBe(false);
+    expect(zodFieldErrors(result.error!)).toEqual({
+      "addresses.1.postal_code": "Postal code must be 20 characters or fewer",
+    });
+  });
+
+  it("drops a fully blank address rather than saving an empty one", () => {
+    const addresses = JSON.stringify([
+      { type: "Home", address: null, city: null, state: null, postal_code: null, country: null },
+      { type: "Work", city: "Reno" },
+    ]);
+
+    const parsed = contactInputSchema.parse(values({ addresses })).addresses;
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({ type: "Work", city: "Reno" });
   });
 });
 

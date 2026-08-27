@@ -3,6 +3,24 @@
  * Field names stay snake_case so payloads map 1:1 onto the wire format.
  */
 
+/** The address `type` the API accepts — see `AddressType` in `app/models.py`. */
+export const ADDRESS_TYPES = ["Home", "Work", "Other"] as const;
+export type AddressType = (typeof ADDRESS_TYPES)[number];
+
+/** `AddressRead` — a contact's stored address. */
+export interface Address {
+  id: number;
+  type: AddressType;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
+}
+
+/** `AddressCreate` — one address as submitted within a contact's `addresses` list. */
+export type AddressInput = Omit<Address, "id">;
+
 /** `ContactRead` — a stored contact, as returned by every contact endpoint. */
 export interface Contact {
   id: number;
@@ -13,11 +31,7 @@ export interface Contact {
   photo_url: string | null;
   company: string | null;
   job_title: string | null;
-  address: string | null;
-  city: string | null;
-  state: string | null;
-  postal_code: string | null;
-  country: string | null;
+  addresses: Address[];
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -27,8 +41,10 @@ export interface Contact {
 /** Every editable field, i.e. `ContactCreate` / `ContactReplace`. */
 export type ContactInput = Omit<
   Contact,
-  "id" | "created_at" | "updated_at" | "full_name"
->;
+  "id" | "created_at" | "updated_at" | "full_name" | "addresses"
+> & {
+  addresses: AddressInput[];
+};
 
 /** `ContactPage` — one page of contacts plus the totals needed to paginate. */
 export interface ContactPage {
@@ -74,8 +90,13 @@ export type FormState = {
   status: "idle" | "error";
   /** Message shown above the form; used for API-level failures. */
   message?: string;
-  /** Per-field messages keyed by input name. */
-  fieldErrors?: Partial<Record<keyof ContactInput, string>>;
+  /**
+   * Per-field messages keyed by input `name`. Plain string rather than
+   * `keyof ContactInput` because a nested address error is keyed by its full
+   * dotted path (e.g. `addresses.0.postal_code`), matching that field's own
+   * `name` attribute so it can render right under the specific input.
+   */
+  fieldErrors?: Record<string, string>;
   /** Echo of the submitted values so the form survives a failed round trip. */
   values?: Partial<Record<keyof ContactInput, string>>;
 };

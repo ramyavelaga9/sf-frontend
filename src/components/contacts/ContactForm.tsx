@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Field from "@/components/ui/Field";
 import ContactPhotoField from "@/components/contacts/ContactPhotoField";
+import AddressListField from "@/components/contacts/AddressListField";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import { CONTACT_FIELD_GROUPS } from "@/lib/contacts/schema";
 import {
@@ -62,8 +63,18 @@ export default function ContactForm({
   const [photoPending, setPhotoPending] = useState(false);
 
   function valueFor(name: keyof ContactInput): string {
-    return state.values?.[name] ?? contact?.[name] ?? "";
+    // `addresses` isn't a plain string field (see `addressesDefault` below),
+    // so anything non-string here just falls back to empty — it's never
+    // actually rendered through this path.
+    const value = state.values?.[name] ?? contact?.[name] ?? "";
+    return typeof value === "string" ? value : "";
   }
+
+  // `addresses` is an array, not a string — AddressListField manages it as
+  // JSON, so the fallback chain has to build that JSON itself rather than
+  // relying on `valueFor`'s plain string coercion.
+  const addressesDefault =
+    state.values?.addresses ?? JSON.stringify(contact?.addresses ?? []);
 
   return (
     <form action={formAction} noValidate className="space-y-8">
@@ -95,25 +106,38 @@ export default function ContactForm({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            {group.fields.map((field) =>
-              field.type === "photo" ? (
-                <ContactPhotoField
-                  key={field.name}
-                  name={field.name}
-                  label={field.label}
-                  defaultValue={valueFor(field.name)}
-                  error={state.fieldErrors?.[field.name]}
-                  onPendingChange={setPhotoPending}
-                />
-              ) : (
+            {group.fields.map((field) => {
+              if (field.type === "photo") {
+                return (
+                  <ContactPhotoField
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    defaultValue={valueFor(field.name)}
+                    error={state.fieldErrors?.[field.name]}
+                    onPendingChange={setPhotoPending}
+                  />
+                );
+              }
+              if (field.type === "address-list") {
+                return (
+                  <AddressListField
+                    key={field.name}
+                    name={field.name}
+                    defaultValue={addressesDefault}
+                    fieldErrors={state.fieldErrors ?? {}}
+                  />
+                );
+              }
+              return (
                 <Field
                   key={field.name}
                   field={field}
                   defaultValue={valueFor(field.name)}
                   error={state.fieldErrors?.[field.name]}
                 />
-              ),
-            )}
+              );
+            })}
           </div>
         </fieldset>
       ))}

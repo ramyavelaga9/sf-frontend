@@ -50,21 +50,27 @@ describe("jobLine", () => {
 });
 
 describe("addressLine", () => {
+  const base = {
+    address: null,
+    city: "San Francisco",
+    state: "CA",
+    postal_code: null,
+    country: "USA",
+  };
+
   it("skips the parts that are not filled in", () => {
-    expect(addressLine(makeContact())).toBe("San Francisco, CA, USA");
+    expect(addressLine(base)).toBe("San Francisco, CA, USA");
   });
 
   it("pairs the state with the postal code", () => {
     expect(
-      addressLine(makeContact({ address: "1 Market St", postal_code: "94105" })),
+      addressLine({ ...base, address: "1 Market St", postal_code: "94105" }),
     ).toBe("1 Market St, San Francisco, CA 94105, USA");
   });
 
   it("returns null when there is no address at all", () => {
     expect(
-      addressLine(
-        makeContact({ city: null, state: null, country: null, postal_code: null }),
-      ),
+      addressLine({ ...base, city: null, state: null, country: null }),
     ).toBeNull();
   });
 });
