@@ -47,11 +47,14 @@ export default function ContactPhotoField({
   label,
   defaultValue,
   error: externalError,
+  onPendingChange,
 }: {
   name: string;
   label: string;
   defaultValue?: string;
   error?: string;
+  /** Notified while a file is being read, so the form can hold off on submitting. */
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const inputId = useId();
   const [photo, setPhoto] = useState<string | null>(defaultValue || null);
@@ -69,6 +72,7 @@ export default function ContactPhotoField({
     if (!file) return;
 
     const selection = ++selectionRef.current;
+    onPendingChange?.(true);
     try {
       const dataUrl = await readImageFile(file);
       if (selection !== selectionRef.current) return; // superseded
@@ -79,6 +83,10 @@ export default function ContactPhotoField({
       setLocalError(
         cause instanceof Error ? cause.message : "Could not read that file.",
       );
+    } finally {
+      // Only the most recent read gets to clear the pending flag — an older,
+      // superseded read finishing late must not mark a newer one as done.
+      if (selection === selectionRef.current) onPendingChange?.(false);
     }
   }
 
@@ -86,6 +94,7 @@ export default function ContactPhotoField({
     selectionRef.current += 1; // invalidate any read still in flight
     setPhoto(null);
     setLocalError(null);
+    onPendingChange?.(false);
   }
 
   return (
