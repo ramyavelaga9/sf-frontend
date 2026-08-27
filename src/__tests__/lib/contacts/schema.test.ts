@@ -11,6 +11,7 @@ function values(overrides: Record<string, string> = {}) {
     last_name: "Lovelace",
     email: "Ada@Example.com",
     phone: "",
+    photo_url: "",
     company: "",
     job_title: "",
     address: "",
@@ -54,6 +55,32 @@ describe("contactInputSchema", () => {
   it("rejects a malformed email", () => {
     const result = contactInputSchema.safeParse(values({ email: "not-an-email" }));
     expect(zodFieldErrors(result.error!).email).toBe("Enter a valid email address");
+  });
+
+  it("accepts a photo as a data URL and blanks it out to null", () => {
+    expect(contactInputSchema.parse(values()).photo_url).toBeNull();
+
+    const photo = "data:image/png;base64,aGVsbG8=";
+    expect(contactInputSchema.parse(values({ photo_url: photo })).photo_url).toBe(
+      photo,
+    );
+  });
+
+  it("rejects a photo that is not a data URL", () => {
+    const result = contactInputSchema.safeParse(
+      values({ photo_url: "not-a-photo" }),
+    );
+    expect(zodFieldErrors(result.error!).photo_url).toBe("Photo must be an image");
+  });
+
+  it("rejects a photo over the size limit", () => {
+    const oversized = "data:image/png;base64," + "a".repeat(2_000_000);
+    const result = contactInputSchema.safeParse(
+      values({ photo_url: oversized }),
+    );
+    expect(zodFieldErrors(result.error!).photo_url).toBe(
+      "Photo is too large (max ~1.5 MB)",
+    );
   });
 
   it("enforces the API's length limits", () => {

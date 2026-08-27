@@ -36,6 +36,26 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/street address/i)).toHaveValue("");
   });
 
+  it("carries the existing photo forward when editing without touching it", async () => {
+    // PUT is a full replace: if this hidden field weren't pre-filled from the
+    // contact, saving any other edit would silently wipe the photo.
+    const photo = "data:image/png;base64,aGVsbG8=";
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    const { container } = renderForm(
+      action,
+      makeContact({ photo_url: photo }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const hiddenInput = container.querySelector('input[name="photo_url"]');
+    expect(hiddenInput).toHaveValue(photo);
+    expect(action.mock.calls[0][1].get("photo_url")).toBe(photo);
+  });
+
   it("submits the entered values to the action", async () => {
     const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
       async () => ({ status: "idle" }),
