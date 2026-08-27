@@ -28,6 +28,25 @@ function requiredText(max: number, label: string) {
     .max(max, `${label} must be ${max} characters or fewer`);
 }
 
+/** Mirrors the API's cap: ~1.5 MB decoded, ~2,000,000 characters base64-encoded. */
+export const MAX_PHOTO_DATA_URL_LENGTH = 2_000_000;
+
+/** Optional photo, submitted as a `data:image/...;base64,...` URL; blank clears it. */
+const photoUrlSchema = z
+  .string()
+  .trim()
+  .transform((value) => value || null)
+  .nullable()
+  .default(null)
+  .refine(
+    (value) => value === null || value.startsWith("data:image/"),
+    "Photo must be an image",
+  )
+  .refine(
+    (value) => value === null || value.length <= MAX_PHOTO_DATA_URL_LENGTH,
+    "Photo is too large (max ~1.5 MB)",
+  );
+
 export const contactInputSchema = z.object({
   first_name: requiredText(100, "First name"),
   last_name: requiredText(100, "Last name"),
@@ -39,6 +58,7 @@ export const contactInputSchema = z.object({
     .pipe(z.email("Enter a valid email address"))
     .transform((value) => value.toLowerCase()),
   phone: optionalText(40, "Phone"),
+  photo_url: photoUrlSchema,
   company: optionalText(200, "Company"),
   job_title: optionalText(200, "Job title"),
   address: optionalText(300, "Address"),
@@ -77,7 +97,7 @@ export function zodFieldErrors(
 export interface ContactFieldSpec {
   name: keyof ContactInput;
   label: string;
-  type?: "text" | "email" | "tel" | "textarea";
+  type?: "text" | "email" | "tel" | "textarea" | "photo";
   required?: boolean;
   maxLength: number;
   placeholder?: string;
@@ -97,6 +117,13 @@ export const CONTACT_FIELD_GROUPS: ContactFieldGroup[] = [
     title: "Identity",
     description: "First name, last name, and email are required.",
     fields: [
+      {
+        name: "photo_url",
+        label: "Photo",
+        type: "photo",
+        maxLength: MAX_PHOTO_DATA_URL_LENGTH,
+        wide: true,
+      },
       {
         name: "first_name",
         label: "First name",

@@ -1,9 +1,22 @@
-import React from "react";
+import React, { act } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ContactForm from "@/components/contacts/ContactForm";
 import { makeContact } from "../mocks/handlers";
 import type { FormState } from "@/lib/contacts/types";
+
+/** A `FileReader` stand-in whose `readAsDataURL` never resolves on its own — the
+ * test drives `onload` manually, so it can inspect state mid-read. */
+class ManualFileReader {
+  static instances: ManualFileReader[] = [];
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  result: string | null = null;
+
+  readAsDataURL() {
+    ManualFileReader.instances.push(this);
+  }
+}
 
 function renderForm(action: jest.Mock, contact?: ReturnType<typeof makeContact>) {
   return render(
@@ -34,6 +47,56 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/^email/i)).toHaveValue("ada@example.com");
     // Nulls become empty inputs rather than the string "null".
     expect(screen.getByLabelText(/street address/i)).toHaveValue("");
+  });
+
+  it("disables submit while a picked photo is still being read", async () => {
+    // A submit that races ahead of the FileReader would send the hidden
+    // field's old value and silently drop the newly picked photo.
+    const OriginalFileReader = global.FileReader;
+    // @ts-expect-error -- swapping in a controllable stand-in for this test only
+    global.FileReader = ManualFileReader;
+    ManualFileReader.instances = [];
+
+    try {
+      const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+        async () => ({ status: "idle" }),
+      );
+      renderForm(action);
+      const submitButton = screen.getByRole("button", { name: /create contact/i });
+      expect(submitButton).not.toBeDisabled();
+
+      const file = new File(["hello"], "avatar.png", { type: "image/png" });
+      await userEvent.upload(screen.getByLabelText(/choose photo/i), file);
+      expect(submitButton).toBeDisabled();
+
+      const reader = ManualFileReader.instances.at(-1)!;
+      reader.result = "data:image/png;base64,aGVsbG8=";
+      await act(async () => reader.onload?.());
+
+      expect(submitButton).not.toBeDisabled();
+    } finally {
+      global.FileReader = OriginalFileReader;
+    }
+  });
+
+  it("carries the existing photo forward when editing without touching it", async () => {
+    // PUT is a full replace: if this hidden field weren't pre-filled from the
+    // contact, saving any other edit would silently wipe the photo.
+    const photo = "data:image/png;base64,aGVsbG8=";
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    const { container } = renderForm(
+      action,
+      makeContact({ photo_url: photo }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const hiddenInput = container.querySelector('input[name="photo_url"]');
+    expect(hiddenInput).toHaveValue(photo);
+    expect(action.mock.calls[0][1].get("photo_url")).toBe(photo);
   });
 
   it("submits the entered values to the action", async () => {

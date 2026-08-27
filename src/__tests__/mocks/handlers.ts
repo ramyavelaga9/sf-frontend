@@ -17,6 +17,7 @@ export function makeContact(overrides: Partial<Contact> = {}): Contact {
     last_name,
     email: "ada@example.com",
     phone: "+1-415-555-0101",
+    photo_url: null,
     company: "Analytical Engines",
     job_title: "Mathematician",
     address: null,

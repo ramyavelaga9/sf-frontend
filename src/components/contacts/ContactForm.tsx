@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Field from "@/components/ui/Field";
+import ContactPhotoField from "@/components/contacts/ContactPhotoField";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import { CONTACT_FIELD_GROUPS } from "@/lib/contacts/schema";
 import {
@@ -19,11 +20,18 @@ export type ContactFormAction = (
   formData: FormData,
 ) => Promise<FormState>;
 
-function SubmitButton({ label }: { label: string }) {
+function SubmitButton({
+  label,
+  disabled,
+}: {
+  label: string;
+  /** True while a photo is still being read, so a fresh selection can't be lost to an early submit. */
+  disabled?: boolean;
+}) {
   const { pending } = useFormStatus();
 
   return (
-    <Button type="submit" disabled={pending}>
+    <Button type="submit" disabled={pending || disabled}>
       {pending ? (
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
       ) : null}
@@ -49,6 +57,9 @@ export default function ContactForm({
   cancelHref: string;
 }) {
   const [state, formAction] = useActionState(action, EMPTY_FORM_STATE);
+  // True while a photo file is being read, so a submit can't race ahead of it
+  // and send the hidden field's old value.
+  const [photoPending, setPhotoPending] = useState(false);
 
   function valueFor(name: keyof ContactInput): string {
     return state.values?.[name] ?? contact?.[name] ?? "";
@@ -84,20 +95,31 @@ export default function ContactForm({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            {group.fields.map((field) => (
-              <Field
-                key={field.name}
-                field={field}
-                defaultValue={valueFor(field.name)}
-                error={state.fieldErrors?.[field.name]}
-              />
-            ))}
+            {group.fields.map((field) =>
+              field.type === "photo" ? (
+                <ContactPhotoField
+                  key={field.name}
+                  name={field.name}
+                  label={field.label}
+                  defaultValue={valueFor(field.name)}
+                  error={state.fieldErrors?.[field.name]}
+                  onPendingChange={setPhotoPending}
+                />
+              ) : (
+                <Field
+                  key={field.name}
+                  field={field}
+                  defaultValue={valueFor(field.name)}
+                  error={state.fieldErrors?.[field.name]}
+                />
+              ),
+            )}
           </div>
         </fieldset>
       ))}
 
       <div className="flex items-center gap-2 border-t border-hairline pt-4">
-        <SubmitButton label={submitLabel} />
+        <SubmitButton label={submitLabel} disabled={photoPending} />
         <Link href={cancelHref} className={buttonClasses("secondary")}>
           Cancel
         </Link>
