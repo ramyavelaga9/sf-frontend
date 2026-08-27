@@ -161,4 +161,22 @@ describe("error translation", () => {
   it("returns nothing for a non-validation body", () => {
     expect(toFieldErrors(new ApiError(500, "boom"))).toEqual({});
   });
+
+  it("keys a nested address error by its full dotted path, not just the last segment", () => {
+    const error = new ApiError(
+      422,
+      JSON.stringify({
+        detail: [
+          { loc: ["body", "addresses", 0, "postal_code"], msg: "String should have at most 20 characters" },
+        ],
+      }),
+    );
+
+    // The old behavior (keying by the last segment alone) would produce
+    // `{ postal_code: ... }`, which nothing in the form renders — the address
+    // widget only ever looks up its own dotted-path names.
+    expect(toFieldErrors(error)).toEqual({
+      "addresses.0.postal_code": "String should have at most 20 characters",
+    });
+  });
 });

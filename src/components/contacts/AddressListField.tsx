@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { buttonClasses } from "@/components/ui/Button";
-import { ADDRESS_TYPES, type AddressInput, type AddressType } from "@/lib/contacts/types";
+import { ADDRESS_FIELD_LIMITS } from "@/lib/contacts/schema";
+import { ADDRESS_TYPES, type AddressInput } from "@/lib/contacts/types";
 
 const CONTROL =
   "w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 transition-colors focus:border-primary focus:bg-input";
@@ -29,21 +30,34 @@ function parseAddresses(raw: string): AddressInput[] {
 
 type TextFieldName = Exclude<keyof AddressInput, "type">;
 
-const TEXT_FIELDS: { name: TextFieldName; label: string; placeholder: string }[] = [
-  { name: "address", label: "Street address", placeholder: "1 Market St, Suite 400" },
-  { name: "city", label: "City", placeholder: "San Francisco" },
-  { name: "state", label: "State / region", placeholder: "CA" },
-  { name: "postal_code", label: "Postal code", placeholder: "94105" },
-  { name: "country", label: "Country", placeholder: "USA" },
+const TEXT_FIELDS: {
+  name: TextFieldName;
+  label: string;
+  placeholder: string;
+  autoComplete: string;
+}[] = [
+  { name: "address", label: "Street address", placeholder: "1 Market St, Suite 400", autoComplete: "street-address" },
+  { name: "city", label: "City", placeholder: "San Francisco", autoComplete: "address-level2" },
+  { name: "state", label: "State / region", placeholder: "CA", autoComplete: "address-level1" },
+  { name: "postal_code", label: "Postal code", placeholder: "94105", autoComplete: "postal-code" },
+  { name: "country", label: "Country", placeholder: "USA", autoComplete: "country-name" },
 ];
 
+/**
+ * One address's fields, all genuine named/uncontrolled form controls (the
+ * same `defaultValue`-driven pattern the rest of this form uses) — not
+ * `value`/`onChange` React state. That's what lets a native submit collect
+ * them correctly even before React has hydrated.
+ */
 function AddressCard({
-  address,
-  onChange,
+  namePrefix,
+  initial,
+  errors,
   onRemove,
 }: {
-  address: AddressInput;
-  onChange: (patch: Partial<AddressInput>) => void;
+  namePrefix: string;
+  initial: AddressInput;
+  errors: Record<string, string>;
   onRemove: () => void;
 }) {
   const idPrefix = useId();
@@ -52,9 +66,9 @@ function AddressCard({
     <div className="space-y-3 rounded-md border border-border p-3">
       <div className="flex items-center justify-between gap-2">
         <select
+          name={`${namePrefix}.type`}
           aria-label="Address type"
-          value={address.type}
-          onChange={(event) => onChange({ type: event.target.value as AddressType })}
+          defaultValue={initial.type}
           className={`${CONTROL} w-auto`}
         >
           {ADDRESS_TYPES.map((type) => (
@@ -75,70 +89,90 @@ function AddressCard({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {TEXT_FIELDS.map(({ name, label, placeholder }) => (
-          <div key={name}>
-            <label
-              htmlFor={`${idPrefix}-${name}`}
-              className="mb-1 block text-[12px] text-muted-foreground"
-            >
-              {label}
-            </label>
-            <input
-              id={`${idPrefix}-${name}`}
-              value={address[name] ?? ""}
-              placeholder={placeholder}
-              onChange={(event) => onChange({ [name]: event.target.value || null })}
-              className={CONTROL}
-            />
-          </div>
-        ))}
+        {TEXT_FIELDS.map(({ name, label, placeholder, autoComplete }) => {
+          const fieldName = `${namePrefix}.${name}`;
+          const error = errors[fieldName];
+          const inputId = `${idPrefix}-${name}`;
+          const errorId = `${inputId}-error`;
+
+          return (
+            <div key={name}>
+              <label htmlFor={inputId} className="mb-1 block text-[12px] text-muted-foreground">
+                {label}
+              </label>
+              <input
+                id={inputId}
+                name={fieldName}
+                defaultValue={initial[name] ?? ""}
+                placeholder={placeholder}
+                autoComplete={autoComplete}
+                maxLength={ADDRESS_FIELD_LIMITS[name]}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? errorId : undefined}
+                className={`${CONTROL} ${error ? "border-destructive focus:border-destructive" : "border-border"}`}
+              />
+              {error ? (
+                <p id={errorId} role="alert" className="mt-1 text-[12px] text-destructive">
+                  {error}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 /**
- * Add/edit/remove a contact's addresses. There's no native form encoding for
- * an array of objects, so the list is kept as client-side array state and
- * serialized into a single hidden `addresses` input as JSON — the same
- * pattern `ContactPhotoField` uses — so it rides the existing
- * `FormData` -> schema pipeline unchanged.
+ * Add/edit/remove a contact's addresses.
+ *
+ * Each address's fields are real named inputs (`<name>.<index>.<field>`),
+ * not a single JSON blob — a native form submission (no JS, or before
+ * hydration) collects them correctly, same as every other field in this
+ * form. `formDataToValues` (`lib/contacts/schema.ts`) reassembles those
+ * indexed entries back into one JSON string for the shared Zod schema.
+ *
+ * Cards are keyed by a stable id assigned on creation, not their array
+ * index — removing a card in the middle would otherwise shift every later
+ * card's index-based key, and React would reuse the wrong DOM node (and
+ * drop focus) instead of removing the one the user actually deleted.
  */
 export default function AddressListField({
   name,
   defaultValue,
-  error,
+  fieldErrors,
 }: {
   name: string;
   defaultValue: string;
-  error?: string;
+  fieldErrors: Record<string, string>;
 }) {
-  const [addresses, setAddresses] = useState<AddressInput[]>(() => parseAddresses(defaultValue));
-
-  function updateAddress(index: number, patch: Partial<AddressInput>) {
-    setAddresses((current) =>
-      current.map((address, i) => (i === index ? { ...address, ...patch } : address)),
-    );
-  }
+  const [cards, setCards] = useState<{ id: number; initial: AddressInput }[]>(() =>
+    parseAddresses(defaultValue).map((initial, index) => ({ id: index, initial })),
+  );
+  // Refs can't be touched during render (including a useState initializer),
+  // so this is seeded from the already-computed initial state instead.
+  const nextId = useRef(cards.length);
 
   function addAddress() {
-    setAddresses((current) => [...current, { ...BLANK_ADDRESS }]);
+    setCards((current) => [...current, { id: nextId.current++, initial: { ...BLANK_ADDRESS } }]);
   }
 
-  function removeAddress(index: number) {
-    setAddresses((current) => current.filter((_, i) => i !== index));
+  function removeAddress(id: number) {
+    setCards((current) => current.filter((card) => card.id !== id));
   }
+
+  const listError = fieldErrors[name];
 
   return (
     <div className="space-y-3 sm:col-span-2">
-      <input type="hidden" name={name} value={JSON.stringify(addresses)} />
-
-      {addresses.map((address, index) => (
+      {cards.map((card, index) => (
         <AddressCard
-          key={index}
-          address={address}
-          onChange={(patch) => updateAddress(index, patch)}
-          onRemove={() => removeAddress(index)}
+          key={card.id}
+          namePrefix={`${name}.${index}`}
+          initial={card.initial}
+          errors={fieldErrors}
+          onRemove={() => removeAddress(card.id)}
         />
       ))}
 
@@ -147,9 +181,9 @@ export default function AddressListField({
         Add address
       </button>
 
-      {error ? (
+      {listError ? (
         <p role="alert" className="text-[13px] text-destructive">
-          {error}
+          {listError}
         </p>
       ) : null}
     </div>

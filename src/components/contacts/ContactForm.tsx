@@ -125,7 +125,7 @@ export default function ContactForm({
                     key={field.name}
                     name={field.name}
                     defaultValue={addressesDefault}
-                    error={state.fieldErrors?.[field.name]}
+                    fieldErrors={state.fieldErrors ?? {}}
                   />
                 );
               }

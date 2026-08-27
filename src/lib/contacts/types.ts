@@ -90,8 +90,13 @@ export type FormState = {
   status: "idle" | "error";
   /** Message shown above the form; used for API-level failures. */
   message?: string;
-  /** Per-field messages keyed by input name. */
-  fieldErrors?: Partial<Record<keyof ContactInput, string>>;
+  /**
+   * Per-field messages keyed by input `name`. Plain string rather than
+   * `keyof ContactInput` because a nested address error is keyed by its full
+   * dotted path (e.g. `addresses.0.postal_code`), matching that field's own
+   * `name` attribute so it can render right under the specific input.
+   */
+  fieldErrors?: Record<string, string>;
   /** Echo of the submitted values so the form survives a failed round trip. */
   values?: Partial<Record<keyof ContactInput, string>>;
 };

@@ -47,19 +47,39 @@ const photoUrlSchema = z
     "Photo is too large (max ~1.5 MB)",
   );
 
+/**
+ * One source of truth for each address field's length cap, shared with the
+ * native `maxLength` attributes `AddressListField` renders.
+ */
+export const ADDRESS_FIELD_LIMITS = {
+  address: 300,
+  city: 120,
+  state: 120,
+  postal_code: 20,
+  country: 120,
+} as const;
+
 const addressInputSchema = z.object({
   type: z.enum(ADDRESS_TYPES),
-  address: optionalText(300, "Address"),
-  city: optionalText(120, "City"),
-  state: optionalText(120, "State"),
-  postal_code: optionalText(20, "Postal code"),
-  country: optionalText(120, "Country"),
+  address: optionalText(ADDRESS_FIELD_LIMITS.address, "Address"),
+  city: optionalText(ADDRESS_FIELD_LIMITS.city, "City"),
+  state: optionalText(ADDRESS_FIELD_LIMITS.state, "State"),
+  postal_code: optionalText(ADDRESS_FIELD_LIMITS.postal_code, "Postal code"),
+  country: optionalText(ADDRESS_FIELD_LIMITS.country, "Country"),
 });
 
+/** True once every location field is blank — nothing worth saving. */
+function isBlankAddress(address: z.infer<typeof addressInputSchema>): boolean {
+  return !(address.address || address.city || address.state || address.postal_code || address.country);
+}
+
 /**
- * `AddressListField` submits the whole list as one JSON string in a hidden
- * input (there's no native form encoding for an array of objects), so this
- * parses that string before validating it as an address array.
+ * `formDataToValues` reassembles the list from indexed `addresses.<n>.<field>`
+ * form controls into this one JSON string (see the comment there for why),
+ * so this parses that string before validating it as an address array. A
+ * fully blank card (type picked, nothing else filled in) is dropped rather
+ * than saved as an empty address — matching the pre-multi-address behavior,
+ * where "no fields filled in" simply meant "no address".
  */
 const addressesSchema = z
   .string()
@@ -72,7 +92,8 @@ const addressesSchema = z
       return z.NEVER;
     }
   })
-  .pipe(z.array(addressInputSchema));
+  .pipe(z.array(addressInputSchema))
+  .transform((addresses) => addresses.filter((address) => !isBlankAddress(address)));
 
 export const contactInputSchema = z.object({
   first_name: requiredText(100, "First name"),
@@ -99,16 +120,17 @@ export const contactInputSchema = z.object({
 
 export type ContactFormValues = z.input<typeof contactInputSchema>;
 
-/** Collapse a ZodError into one message per field, keyed by input name. */
-export function zodFieldErrors(
-  error: z.ZodError,
-): Partial<Record<keyof ContactInput, string>> {
-  const fieldErrors: Partial<Record<keyof ContactInput, string>> = {};
+/**
+ * Collapse a ZodError into one message per field, keyed by the issue's full
+ * dotted path — e.g. `addresses.0.postal_code` for a nested address issue —
+ * so each has its own key instead of every address issue colliding under a
+ * single top-level `addresses` message. Mirrors `toFieldErrors` in `./api.ts`.
+ */
+export function zodFieldErrors(error: z.ZodError): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
   for (const issue of error.issues) {
-    const key = issue.path[0];
-    if (typeof key === "string" && !(key in fieldErrors)) {
-      fieldErrors[key as keyof ContactInput] = issue.message;
-    }
+    const key = issue.path.join(".");
+    if (key) fieldErrors[key] ??= issue.message;
   }
   return fieldErrors;
 }
@@ -235,14 +257,43 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
   (group) => group.fields,
 );
 
+const ADDRESS_FIELD_PATTERN = /^addresses\.(\d+)\.(type|address|city|state|postal_code|country)$/;
+
+/**
+ * `AddressListField` renders each address's fields as real, independently
+ * named controls (`addresses.<index>.<field>`) rather than one JSON blob —
+ * that's what keeps them genuine "successful form controls" that submit
+ * correctly even before React hydrates. This reassembles those indexed
+ * entries back into the JSON string `addressesSchema` (above) expects, so
+ * the rest of the validation pipeline doesn't need to know the difference.
+ */
+function extractAddressesJson(formData: FormData): string {
+  const byIndex = new Map<number, Record<string, string>>();
+  for (const [key, value] of formData.entries()) {
+    const match = ADDRESS_FIELD_PATTERN.exec(key);
+    if (!match) continue;
+    const [, indexText, field] = match;
+    const entry = byIndex.get(Number(indexText)) ?? {};
+    entry[field] = String(value);
+    byIndex.set(Number(indexText), entry);
+  }
+
+  const addresses = [...byIndex.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, entry]) => entry);
+  return JSON.stringify(addresses);
+}
+
 /** Pull the contact fields out of a submitted form, as raw strings. */
 export function formDataToValues(
   formData: FormData,
 ): Record<keyof ContactInput, string> {
-  return Object.fromEntries(
-    CONTACT_FIELDS.map((field) => [
+  const values = Object.fromEntries(
+    CONTACT_FIELDS.filter((field) => field.name !== "addresses").map((field) => [
       field.name,
       String(formData.get(field.name) ?? ""),
     ]),
   ) as Record<keyof ContactInput, string>;
+  values.addresses = extractAddressesJson(formData);
+  return values;
 }
