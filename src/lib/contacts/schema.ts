@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ContactInput } from "./types";
+import { ADDRESS_TYPES, type ContactInput } from "./types";
 
 /**
  * Client/server-shared validation for the contact form.
@@ -47,6 +47,33 @@ const photoUrlSchema = z
     "Photo is too large (max ~1.5 MB)",
   );
 
+const addressInputSchema = z.object({
+  type: z.enum(ADDRESS_TYPES),
+  address: optionalText(300, "Address"),
+  city: optionalText(120, "City"),
+  state: optionalText(120, "State"),
+  postal_code: optionalText(20, "Postal code"),
+  country: optionalText(120, "Country"),
+});
+
+/**
+ * `AddressListField` submits the whole list as one JSON string in a hidden
+ * input (there's no native form encoding for an array of objects), so this
+ * parses that string before validating it as an address array.
+ */
+const addressesSchema = z
+  .string()
+  .transform((value, ctx) => {
+    if (!value) return [];
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "Addresses could not be read." });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(addressInputSchema));
+
 export const contactInputSchema = z.object({
   first_name: requiredText(100, "First name"),
   last_name: requiredText(100, "Last name"),
@@ -61,11 +88,7 @@ export const contactInputSchema = z.object({
   photo_url: photoUrlSchema,
   company: optionalText(200, "Company"),
   job_title: optionalText(200, "Job title"),
-  address: optionalText(300, "Address"),
-  city: optionalText(120, "City"),
-  state: optionalText(120, "State"),
-  postal_code: optionalText(20, "Postal code"),
-  country: optionalText(120, "Country"),
+  addresses: addressesSchema,
   notes: z
     .string()
     .trim()
@@ -97,9 +120,10 @@ export function zodFieldErrors(
 export interface ContactFieldSpec {
   name: keyof ContactInput;
   label: string;
-  type?: "text" | "email" | "tel" | "textarea" | "photo";
+  type?: "text" | "email" | "tel" | "textarea" | "photo" | "address-list";
   required?: boolean;
-  maxLength: number;
+  /** Unused by the "photo" and "address-list" types, which render their own widget. */
+  maxLength?: number;
   placeholder?: string;
   autoComplete?: string;
   /** Column span inside the section grid. */
@@ -180,44 +204,14 @@ export const CONTACT_FIELD_GROUPS: ContactFieldGroup[] = [
     ],
   },
   {
-    title: "Address",
-    description: "Optional postal details.",
+    title: "Addresses",
+    description: "Add as many as you need — each gets its own type.",
     fields: [
       {
-        name: "address",
-        label: "Street address",
-        maxLength: 300,
-        placeholder: "1 Market St, Suite 400",
-        autoComplete: "street-address",
+        name: "addresses",
+        label: "Addresses",
+        type: "address-list",
         wide: true,
-      },
-      {
-        name: "city",
-        label: "City",
-        maxLength: 120,
-        placeholder: "San Francisco",
-        autoComplete: "address-level2",
-      },
-      {
-        name: "state",
-        label: "State / region",
-        maxLength: 120,
-        placeholder: "CA",
-        autoComplete: "address-level1",
-      },
-      {
-        name: "postal_code",
-        label: "Postal code",
-        maxLength: 20,
-        placeholder: "94105",
-        autoComplete: "postal-code",
-      },
-      {
-        name: "country",
-        label: "Country",
-        maxLength: 120,
-        placeholder: "USA",
-        autoComplete: "country-name",
       },
     ],
   },

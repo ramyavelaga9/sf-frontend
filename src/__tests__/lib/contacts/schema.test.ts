@@ -14,11 +14,7 @@ function values(overrides: Record<string, string> = {}) {
     photo_url: "",
     company: "",
     job_title: "",
-    address: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "",
+    addresses: "[]",
     notes: "",
     ...overrides,
   };
@@ -85,13 +81,44 @@ describe("contactInputSchema", () => {
 
   it("enforces the API's length limits", () => {
     const result = contactInputSchema.safeParse(
-      values({ first_name: "a".repeat(101), postal_code: "9".repeat(21) }),
+      values({ first_name: "a".repeat(101) }),
     );
 
     expect(zodFieldErrors(result.error!)).toEqual({
       first_name: "First name must be 100 characters or fewer",
-      postal_code: "Postal code must be 20 characters or fewer",
     });
+  });
+
+  it("parses a JSON addresses list into structured objects", () => {
+    const addresses = JSON.stringify([
+      { type: "Home", city: "San Francisco", state: "CA" },
+      { type: "Work", city: "New York" },
+    ]);
+
+    const parsed = contactInputSchema.parse(values({ addresses })).addresses;
+
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({ type: "Home", city: "San Francisco" });
+    expect(parsed[1]).toMatchObject({ type: "Work", city: "New York" });
+  });
+
+  it("rejects addresses that aren't valid JSON", () => {
+    const result = contactInputSchema.safeParse(values({ addresses: "{not json" }));
+    expect(zodFieldErrors(result.error!).addresses).toBe(
+      "Addresses could not be read.",
+    );
+  });
+
+  it("rejects an address with an unknown type", () => {
+    const addresses = JSON.stringify([{ type: "Vacation", city: "Reno" }]);
+    const result = contactInputSchema.safeParse(values({ addresses }));
+    expect(result.success).toBe(false);
+  });
+
+  it("enforces length limits within each address", () => {
+    const addresses = JSON.stringify([{ type: "Home", postal_code: "9".repeat(21) }]);
+    const result = contactInputSchema.safeParse(values({ addresses }));
+    expect(result.success).toBe(false);
   });
 });
 

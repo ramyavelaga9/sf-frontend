@@ -25,11 +25,7 @@ const INPUT: ContactInput = {
   photo_url: null,
   company: null,
   job_title: null,
-  address: null,
-  city: null,
-  state: null,
-  postal_code: null,
-  country: null,
+  addresses: [],
   notes: null,
 };
 
