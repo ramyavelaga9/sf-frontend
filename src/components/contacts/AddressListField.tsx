@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { buttonClasses } from "@/components/ui/Button";
 import { ADDRESS_FIELD_LIMITS } from "@/lib/contacts/schema";
@@ -52,31 +52,41 @@ const TEXT_FIELDS: {
 function AddressCard({
   namePrefix,
   initial,
-  errors,
+  errorFor,
   onRemove,
 }: {
   namePrefix: string;
   initial: AddressInput;
-  errors: Record<string, string>;
+  /** Looks up this card's own error for one field — see `positionAtLastSubmission` below for why this isn't a plain lookup by `namePrefix`. */
+  errorFor: (field: string) => string | undefined;
   onRemove: () => void;
 }) {
   const idPrefix = useId();
+  const typeError = errorFor("type");
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
       <div className="flex items-center justify-between gap-2">
-        <select
-          name={`${namePrefix}.type`}
-          aria-label="Address type"
-          defaultValue={initial.type}
-          className={`${CONTROL} w-auto`}
-        >
-          {ADDRESS_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
+        <div>
+          <select
+            name={`${namePrefix}.type`}
+            aria-label="Address type"
+            defaultValue={initial.type}
+            aria-invalid={typeError ? true : undefined}
+            className={`${CONTROL} w-auto ${typeError ? "border-destructive focus:border-destructive" : "border-border"}`}
+          >
+            {ADDRESS_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+          {typeError ? (
+            <p role="alert" className="mt-1 text-[12px] text-destructive">
+              {typeError}
+            </p>
+          ) : null}
+        </div>
 
         <button
           type="button"
@@ -90,8 +100,7 @@ function AddressCard({
 
       <div className="grid gap-3 sm:grid-cols-2">
         {TEXT_FIELDS.map(({ name, label, placeholder, autoComplete }) => {
-          const fieldName = `${namePrefix}.${name}`;
-          const error = errors[fieldName];
+          const error = errorFor(name);
           const inputId = `${idPrefix}-${name}`;
           const errorId = `${inputId}-error`;
 
@@ -102,7 +111,7 @@ function AddressCard({
               </label>
               <input
                 id={inputId}
-                name={fieldName}
+                name={`${namePrefix}.${name}`}
                 defaultValue={initial[name] ?? ""}
                 placeholder={placeholder}
                 autoComplete={autoComplete}
@@ -137,6 +146,15 @@ function AddressCard({
  * index — removing a card in the middle would otherwise shift every later
  * card's index-based key, and React would reuse the wrong DOM node (and
  * drop focus) instead of removing the one the user actually deleted.
+ *
+ * That same stable id is also what keeps error messages attached to the
+ * right card. `fieldErrors` is keyed by *position* (`addresses.<index>.city`)
+ * because that's what the server/Zod actually validated — but positions
+ * drift the moment an earlier card is removed, while a card's stable id
+ * never does. So each card's position is frozen at the moment a given
+ * `fieldErrors` arrives (i.e. what that submission's response refers to),
+ * and errors are looked up by that frozen position rather than wherever the
+ * card has since moved to live.
  */
 export default function AddressListField({
   name,
@@ -154,6 +172,16 @@ export default function AddressListField({
   // so this is seeded from the already-computed initial state instead.
   const nextId = useRef(cards.length);
 
+  // Deliberately keyed only on `fieldErrors`, not `cards`: this should only
+  // re-snapshot when a fresh submission result arrives, capturing whatever
+  // order the cards were actually in at that moment — not recompute (and
+  // silently invalidate the freeze) on every subsequent add/remove.
+  const positionAtLastSubmission = useMemo(
+    () => new Map(cards.map((card, index) => [card.id, index])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fieldErrors],
+  );
+
   function addAddress() {
     setCards((current) => [...current, { id: nextId.current++, initial: { ...BLANK_ADDRESS } }]);
   }
@@ -166,15 +194,21 @@ export default function AddressListField({
 
   return (
     <div className="space-y-3 sm:col-span-2">
-      {cards.map((card, index) => (
-        <AddressCard
-          key={card.id}
-          namePrefix={`${name}.${index}`}
-          initial={card.initial}
-          errors={fieldErrors}
-          onRemove={() => removeAddress(card.id)}
-        />
-      ))}
+      {cards.map((card, index) => {
+        const submittedIndex = positionAtLastSubmission.get(card.id);
+        const errorFor = (field: string) =>
+          submittedIndex === undefined ? undefined : fieldErrors[`${name}.${submittedIndex}.${field}`];
+
+        return (
+          <AddressCard
+            key={card.id}
+            namePrefix={`${name}.${index}`}
+            initial={card.initial}
+            errorFor={errorFor}
+            onRemove={() => removeAddress(card.id)}
+          />
+        );
+      })}
 
       <button type="button" onClick={addAddress} className={buttonClasses("secondary", "sm")}>
         <Plus className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />

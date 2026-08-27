@@ -115,4 +115,39 @@ describe("AddressListField", () => {
     renderField("[]", { addresses: "Addresses could not be read." });
     expect(screen.getByRole("alert")).toHaveTextContent("Addresses could not be read.");
   });
+
+  it("keeps an error on the card it was actually about, not whichever card now sits at that position", async () => {
+    const defaultAddresses = JSON.stringify([
+      { type: "Home", city: "A", address: null, state: null, postal_code: null, country: null },
+      { type: "Home", city: "B", address: null, state: null, postal_code: null, country: null },
+      { type: "Home", city: "C", address: null, state: null, postal_code: null, country: null },
+    ]);
+    // This error is about card B (index 1) — from a submission where all
+    // three cards were present.
+    renderField(defaultAddresses, { "addresses.1.city": "City B is invalid" });
+
+    const beforeRemoval = screen.getAllByLabelText(/city/i);
+    expect(beforeRemoval[1]).toHaveValue("B");
+    expect(beforeRemoval[1]).toHaveAttribute("aria-invalid", "true");
+
+    // Removing card A shifts B and C down one live position each. A naive
+    // fix that looks errors up by live position would now attach "City B is
+    // invalid" to whichever card is at live index 1 — which is C, not B.
+    await userEvent.click(screen.getAllByRole("button", { name: /remove address/i })[0]);
+
+    const afterRemoval = screen.getAllByLabelText(/city/i);
+    expect(afterRemoval[0]).toHaveValue("B");
+    expect(afterRemoval[0]).toHaveAttribute("aria-invalid", "true");
+    expect(afterRemoval[1]).toHaveValue("C");
+    expect(afterRemoval[1]).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("gives a newly-added card (added after the last submission) no stale error", async () => {
+    renderField("[]", { "addresses.0.city": "Stale error from a previous submission" });
+
+    await userEvent.click(screen.getByRole("button", { name: /add address/i }));
+
+    expect(screen.getByLabelText(/city/i)).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });
