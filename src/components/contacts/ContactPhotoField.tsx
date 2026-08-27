@@ -1,27 +1,36 @@
 "use client";
 
-import { useId, useState, type ChangeEvent } from "react";
+import { useId, useRef, useState, type ChangeEvent } from "react";
 import { X } from "lucide-react";
 import { buttonClasses } from "@/components/ui/Button";
 import { MAX_PHOTO_DATA_URL_LENGTH } from "@/lib/contacts/schema";
 
-// Base64 inflates size by ~4/3, so cap the raw file below the API's encoded limit.
-const MAX_FILE_BYTES = Math.floor((MAX_PHOTO_DATA_URL_LENGTH * 3) / 4);
-
-/** Reads an image file into a base64 data URL, rejecting non-images and oversized files. */
+/**
+ * Reads an image file into a base64 data URL, rejecting non-images and
+ * anything that would exceed the schema's limit.
+ *
+ * The size check happens on the *encoded* result, not the raw file: the
+ * schema's cap covers the whole `data:image/...;base64,<payload>` string
+ * (prefix included), and base64 inflates the payload by ~4/3, so estimating
+ * from `file.size` alone would let some files through that the server then
+ * rejects.
+ */
 function readImageFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith("image/")) {
       reject(new Error("Please choose an image file."));
       return;
     }
-    if (file.size > MAX_FILE_BYTES) {
-      reject(new Error("That image is too large (max ~1.5 MB)."));
-      return;
-    }
 
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
+    reader.onload = () => {
+      const dataUrl = String(reader.result);
+      if (dataUrl.length > MAX_PHOTO_DATA_URL_LENGTH) {
+        reject(new Error("That image is too large (max ~1.5 MB)."));
+        return;
+      }
+      resolve(dataUrl);
+    };
     reader.onerror = () => reject(new Error("Could not read that file."));
     reader.readAsDataURL(file);
   });
@@ -49,15 +58,24 @@ export default function ContactPhotoField({
   const [localError, setLocalError] = useState<string | null>(null);
   const error = localError ?? externalError;
 
+  // Guards against a stale read: picking a second file (or hitting Remove)
+  // before the first `FileReader` finishes must not let that earlier result
+  // land after the fact and overwrite the user's later choice.
+  const selectionRef = useRef(0);
+
   async function handleChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = ""; // allow re-selecting the same file after an error
     if (!file) return;
 
+    const selection = ++selectionRef.current;
     try {
-      setPhoto(await readImageFile(file));
+      const dataUrl = await readImageFile(file);
+      if (selection !== selectionRef.current) return; // superseded
+      setPhoto(dataUrl);
       setLocalError(null);
     } catch (cause) {
+      if (selection !== selectionRef.current) return;
       setLocalError(
         cause instanceof Error ? cause.message : "Could not read that file.",
       );
@@ -65,6 +83,7 @@ export default function ContactPhotoField({
   }
 
   function handleRemove() {
+    selectionRef.current += 1; // invalidate any read still in flight
     setPhoto(null);
     setLocalError(null);
   }
