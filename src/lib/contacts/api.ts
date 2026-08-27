@@ -86,6 +86,21 @@ export async function updateContact(
   });
 }
 
+/**
+ * Favorite or unfavorite a contact. A dedicated call rather than going
+ * through `updateContact` — `is_favorite` is deliberately not part of
+ * `ContactInput`, so it isn't something the edit form can touch.
+ */
+export async function toggleFavorite(
+  id: number,
+  isFavorite: boolean,
+): Promise<Contact> {
+  return apiJson<Contact>(`${CONTACTS_PATH}/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_favorite: isFavorite }),
+  });
+}
+
 export async function deleteContact(id: number): Promise<void> {
   const res = await apiFetch(`${CONTACTS_PATH}/${id}`, { method: "DELETE" });
   if (!res.ok) {

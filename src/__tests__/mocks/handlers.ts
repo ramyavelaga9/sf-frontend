@@ -24,6 +24,7 @@ export function makeContact(overrides: Partial<Contact> = {}): Contact {
       { id: 1, type: "Home", address: null, city: "San Francisco", state: "CA", postal_code: null, country: "USA" },
     ],
     notes: null,
+    is_favorite: false,
     created_at: "2026-08-19T17:04:53.743932Z",
     updated_at: "2026-08-19T17:04:53.743936Z",
     full_name: `${first_name} ${last_name}`,
